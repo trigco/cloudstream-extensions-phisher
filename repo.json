@@ -1,0 +1,8 @@
+{
+  "name": "Mominul XFlixBD Repository",
+  "description": "Bengali and international movie catalogue",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/plugins.json"
+  ]
+}
