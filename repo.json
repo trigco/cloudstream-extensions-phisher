@@ -1,8 +1,0 @@
-{
-  "name": "Mominul Mega",
-  "description": "Mominul's CloudStream extension repository.",
-  "manifestVersion": 1,
-  "pluginLists": [
-    "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/plugins.json"
-  ]
-}
