@@ -78,6 +78,17 @@ jobs:
           rm -f builds/plugins.json
           find workspace/XFlixBD/build -type f -name '*.cs3' -exec cp {} builds/ \;
           cp workspace/build/plugins.json builds/plugins.json
+          find workspace/XFlixBD/build -type f -name '*.jar' -exec cp {} builds/ \;
+          cat > builds/repo.json <<'EOF'
+          {
+            "name": "Mominul XFlixBD Repository",
+            "description": "Bengali and international movie catalogue",
+            "manifestVersion": 1,
+            "pluginLists": [
+              "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/plugins.json"
+            ]
+          }
+          EOF
           test -n "$(find builds -maxdepth 1 -type f -name '*.cs3' -print -quit)"
           python3 -m json.tool builds/plugins.json >/dev/null
           cd builds
