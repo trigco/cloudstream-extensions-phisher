@@ -1,12 +1,6 @@
 name: Mominul Mega CloudStream Extension
 
 on:
-  push:
-    branches:
-      - feature/mominul-megarepo
-    paths:
-      - 'MominulMega/**'
-      - '.github/workflows/megarepo-build.yml'
   pull_request:
     paths:
       - 'MominulMega/**'
@@ -16,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-megarepo:
@@ -54,39 +48,8 @@ jobs:
           chmod +x gradlew
           ./gradlew :MominulMega:build --stacktrace
           mkdir -p release
-          find MominulMega/build -type f -name 'full.jar' -exec cp {} release/MominulMega-full.jar \;
+          find MominulMega/build -type f -name 'full.jar' -exec cp {} release/MominulMega-full.jar \\;
           test -s release/MominulMega-full.jar
-          cp release/MominulMega-full.jar release/MominulMega.cs3
-          mkdir -p release/repo
-          cp release/MominulMega.cs3 release/repo/MominulMega.cs3
-          FILE_SIZE=$(stat -c%s release/repo/MominulMega.cs3)
-          cat > release/repo/repo.json <<'EOF'
-          {
-            "name": "Mominul Mega",
-            "description": "Mominul's CloudStream extension repository.",
-            "manifestVersion": 1,
-            "pluginLists": [
-              "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/plugins.json"
-            ]
-          }
-          EOF
-          cat > release/repo/plugins.json <<EOF
-          [
-            {
-              "apiVersion": 1,
-              "repositoryUrl": "https://github.com/trigco/cloudstream-extensions-phisher",
-              "fileSize": ${FILE_SIZE},
-              "status": 1,
-              "language": "en",
-              "authors": ["Mominul"],
-              "version": 1,
-              "internalName": "MominulMega",
-              "description": "Mominul Mega repository helper extension.",
-              "url": "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/MominulMega.cs3",
-              "name": "Mominul Mega"
-            }
-          ]
-          EOF
           (cd release && zip -q MominulMega-CloudStream-Extension.zip MominulMega-full.jar)
 
       - name: Upload compiled extension
@@ -95,12 +58,3 @@ jobs:
           name: mominul-megarepo-cloudstream
           path: workspace/release/MominulMega-CloudStream-Extension.zip
           if-no-files-found: error
-
-      - name: Publish CloudStream repository
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: builds
-          publish_dir: workspace/release/repo
-          force_orphan: true
