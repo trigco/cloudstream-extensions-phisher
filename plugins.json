@@ -1,15 +1,26 @@
 [
-  {
-    "apiVersion": 1,
-    "repositoryUrl": "https://github.com/trigco/cloudstream-extensions-phisher",
-    "fileSize": 33701,
-    "status": 1,
-    "language": "en",
-    "authors": ["Mominul"],
-    "version": 1,
-    "internalName": "MominulMega",
-    "description": "Mominul Mega repository helper extension.",
-    "url": "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/MominulMega.cs3",
-    "name": "Mominul Mega"
-  }
+    {
+        "url": "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/XFlixBD.cs3",
+        "status": 3,
+        "version": 1,
+        "name": "XFlixBD",
+        "internalName": "XFlixBD",
+        "authors": [
+            "trigco"
+        ],
+        "description": "XFlixBD \u2014 Bengali and international movie catalogue",
+        "fileSize": 16890,
+        "repositoryUrl": "https://github.com/trigco/cloudstream-extensions-phisher",
+        "language": "bn",
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "iconUrl": "https://www.google.com/s2/favicons?domain=xflixbd.org&sz=%size%",
+        "apiVersion": 1,
+        "fileHash": "sha256-ebd89665e0ad8266f246d4428b06a63047f77041b340e4848f542511e1d45a27",
+        "jarFileSize": 52582,
+        "jarUrl": "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/XFlixBD.jar",
+        "jarHash": "sha256-b711b3864d04abb2419ffa232649e9d6c682139697c0c5e202e89083b22dd9de"
+    }
 ]
