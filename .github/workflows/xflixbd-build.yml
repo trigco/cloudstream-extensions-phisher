@@ -1,36 +1,40 @@
 name: XFlixBD Extension Build
 
 on:
-  pull_request:
+  push:
+    branches:
+      - feature/mominul-megarepo
     paths:
       - 'XFlixBD/**'
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
+      - 'gradle.properties'
       - '.github/workflows/xflixbd-build.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: xflixbd-publish
+  cancel-in-progress: false
 
 jobs:
-  build-xflixbd:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout extension source
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref_name }}
           path: source
 
-      - name: Create isolated CloudStream build workspace
-        run: |
-          mkdir -p workspace
-          cp -a source/gradle workspace/
-          cp source/gradlew source/build.gradle.kts source/settings.gradle.kts source/gradle.properties workspace/
-          cp -a source/XFlixBD workspace/
-          cat > workspace/settings.gradle.kts <<'EOF'
-          rootProject.name = "CloudstreamPlugins"
-          include("XFlixBD")
-          EOF
+      - name: Checkout builds branch
+        uses: actions/checkout@v4
+        with:
+          ref: builds
+          path: builds
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -38,30 +42,63 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Create local.properties
-        run: touch workspace/local.properties
+      - name: Prepare isolated CloudStream workspace
+        run: |
+          mkdir -p workspace
+          cp -a source/gradle workspace/
+          cp source/gradlew source/build.gradle.kts source/gradle.properties workspace/
+          cp -a source/XFlixBD workspace/
+          cat > workspace/settings.gradle.kts <<'EOF'
+          rootProject.name = "CloudstreamPlugins"
+          include("XFlixBD")
+          EOF
+          touch workspace/local.properties
 
-      - name: Build CloudStream .cs3 plugin
+      - name: Build plugin and plugins.json
         working-directory: workspace
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           chmod +x gradlew
-          ./gradlew :XFlixBD:make --stacktrace
-          echo "Generated plugin files:"
-          find XFlixBD/build -type f \( -name '*.cs3' -o -name '*.jar' \) | sort
-          mkdir -p release
-          find XFlixBD/build -type f -name '*.cs3' -exec cp {} release/ \;
-          if [ -z "$(find release -maxdepth 1 -type f -name '*.cs3' -print -quit)" ]; then
-            echo "No .cs3 plugin generated. Build output:"
-            find XFlixBD/build -maxdepth 5 -type f | sort
-            exit 1
-          fi
+          ./gradlew make makePluginsJson --stacktrace
+          echo "Generated CloudStream plugin files:"
+          find XFlixBD/build -maxdepth 2 -type f \( -name '*.cs3' -o -name '*.jar' \) -print
+          test -n "$(find XFlixBD/build -maxdepth 2 -type f -name '*.cs3' -print -quit)"
+          test -s build/plugins.json
 
-      - name: Upload XFlixBD .cs3 plugin
+      - name: Publish .cs3 and plugins.json to builds branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          find builds -maxdepth 1 -type f -name '*.cs3' -delete
+          rm -f builds/plugins.json builds/repo.json
+          find source/XFlixBD/build -type f -name '*.cs3' -exec cp {} builds/ \;
+          cp workspace/build/plugins.json builds/plugins.json
+          test -n "$(find builds -maxdepth 1 -type f -name '*.cs3' -print -quit)"
+          python3 -m json.tool builds/plugins.json >/dev/null
+          cd builds
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No publication changes."
+            exit 0
+          fi
+          git commit -m "Publish XFlixBD CloudStream plugin"
+          git push origin HEAD:builds
+
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: xflixbd-cs3-plugin
-          path: workspace/release/*.cs3
+          path: |
+            workspace/XFlixBD/build/*.cs3
+            workspace/build/plugins.json
           if-no-files-found: error
