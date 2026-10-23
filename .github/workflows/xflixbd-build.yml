@@ -35,13 +35,19 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :XFlixBD:build --stacktrace
+          echo "Built outputs:"
+          find XFlixBD/build -type f | sort | grep -E '\.(cs3|jar)$' || true
+          mkdir -p dist
+          find XFlixBD/build -type f \( -name '*.cs3' -o -name '*.jar' \) -exec cp {} dist/ \;
+          if [ -z "$(find dist -type f -print -quit)" ]; then
+            echo "No plugin package found after Gradle build."
+            exit 1
+          fi
 
-      - name: Upload plugin package if generated
+      - name: Upload XFlixBD plugin package
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: xflixbd-cloudstream-plugin
-          path: |
-            XFlixBD/build/*.cs3
-            XFlixBD/build/*.jar
-          if-no-files-found: warn
+          path: dist/*
+          if-no-files-found: error
