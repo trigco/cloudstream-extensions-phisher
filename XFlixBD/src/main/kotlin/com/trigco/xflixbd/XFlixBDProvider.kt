@@ -23,17 +23,22 @@ class XFlixBD : MainAPI() {
     override val mainPage = mainPageOf(
         "$mainUrl/" to "Latest",
         "$mainUrl/movies/" to "Movies",
-        "$mainUrl/tv-shows/" to "TV Shows",
         "$mainUrl/genre/bangla/" to "Bangla",
         "$mainUrl/genre/hollywood/" to "Hollywood",
         "$mainUrl/genre/bollywood/" to "Bollywood",
         "$mainUrl/genre/k-drama/" to "K-Drama",
+        "$mainUrl/genre/web-series/" to "Web Series",
+        "$mainUrl/genre/tv-show/" to "TV Shows",
         "$mainUrl/genre/bangla-dubbed/" to "Bangla Dubbed",
-        "$mainUrl/genre/hindi-dubbed/" to "Hindi Dubbed"
+        "$mainUrl/genre/hindi-dubbed/" to "Hindi Dubbed",
+        "$mainUrl/genre/action-adventure/" to "Action & Adventure",
+        "$mainUrl/genre/thriller/" to "Thriller",
+        "$mainUrl/genre/horror/" to "Horror",
+        "$mainUrl/genre/animation/" to "Animation"
     )
 
     private fun Element.toItem(): SearchResponse? {
-        val anchor = selectFirst("h2 a, h3 a, .entry-title a, .post-title a, a[href*='/movie/'], a[href*='/tv-show/'], a[href*='/episode/']")
+        val anchor = selectFirst("h1 a, h2 a, h3 a, .entry-title a, .post-title a, a[href*='/movies/'], a[href*='/movie/'], a[href*='/tv-show/'], a[href*='/tv-shows/'], a[href*='/series/'], a[href*='/episode/']")
             ?: selectFirst("a[href]") ?: return null
         val href = anchor.absUrl("href").ifBlank { fixUrl(anchor.attr("href")) }
         if (!href.startsWith("http") || href == mainUrl || href == "$mainUrl/") return null
@@ -69,9 +74,22 @@ class XFlixBD : MainAPI() {
     }
 
     private fun parseItems(document: org.jsoup.nodes.Document): List<SearchResponse> {
-        val cards = document.select("article, .item, .movie-item, .film-item, .post, .ml-item, .video-item, .grid-item, .entry")
+        val cards = document.select(
+            "article, .item, .movie-item, .film-item, .post, .ml-item, .video-item, .grid-item, .entry, .movie-card, .movie, .poster, .thumb, .flw-item, .film"
+        )
             .mapNotNull { it.toItem() }
         if (cards.isNotEmpty()) return cards.distinctBy { it.url }
+
+        val contentLinks = document.select(
+            "a[href*='/movies/'], a[href*='/movie/'], a[href*='/tv-shows/'], a[href*='/tv-show/'], a[href*='/series/'], a[href*='/episode/']"
+        )
+        val linkedItems = contentLinks.mapNotNull { link ->
+            val card = link.closest(
+                "article, .item, .movie-item, .film-item, .post, .ml-item, .video-item, .grid-item, .entry, .movie-card, .movie, .poster, .thumb, .flw-item, .film"
+            ) ?: link.parent() ?: link
+            card.toItem()
+        }.distinctBy { it.url }
+        if (linkedItems.isNotEmpty()) return linkedItems
 
         return document.select("a[href]").mapNotNull { link ->
             if (link.text().isBlank() || link.selectFirst("img") == null) null
@@ -82,7 +100,15 @@ class XFlixBD : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val base = request.data.trimEnd('/')
         val url = if (page <= 1) base else "$base/page/$page/"
-        val response = app.get(url, referer = "$mainUrl/")
+        val response = app.get(
+            url,
+            referer = "$mainUrl/",
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language" to "en-US,en;q=0.9,bn;q=0.8"
+            )
+        )
         val results = parseItems(response.document)
         return newHomePageResponse(
             list = HomePageList(name = request.name, list = results, isHorizontalImages = false),
@@ -92,12 +118,27 @@ class XFlixBD : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val encoded = java.net.URLEncoder.encode(query.trim(), "UTF-8")
-        val response = app.get("$mainUrl/?s=$encoded", referer = "$mainUrl/")
+        val response = app.get(
+            "$mainUrl/?s=$encoded",
+            referer = "$mainUrl/",
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language" to "en-US,en;q=0.9,bn;q=0.8"
+            )
+        )
         return parseItems(response.document)
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val response = app.get(fixUrl(url), referer = "$mainUrl/")
+        val response = app.get(
+            fixUrl(url),
+            referer = "$mainUrl/",
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept-Language" to "en-US,en;q=0.9,bn;q=0.8"
+            )
+        )
         val document = response.document
         val title = document.selectFirst("meta[property=og:title]")?.attr("content")
             ?.takeIf { it.isNotBlank() }
