@@ -9,3 +9,7 @@ cloudstream {
     iconUrl = "https://www.google.com/s2/favicons?domain=xflixbd.org&sz=%size%"
     isCrossPlatform = true
 }
+
+dependencies {
+    implementation("org.jspecify:jspecify:1.0.0")
+}
