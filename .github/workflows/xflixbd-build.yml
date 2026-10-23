@@ -79,7 +79,7 @@ jobs:
           set -euo pipefail
           find builds -maxdepth 1 -type f -name '*.cs3' -delete
           rm -f builds/plugins.json builds/repo.json
-          find source/XFlixBD/build -type f -name '*.cs3' -exec cp {} builds/ \;
+          find workspace/XFlixBD/build -type f -name '*.cs3' -exec cp {} builds/ \;
           cp workspace/build/plugins.json builds/plugins.json
           test -n "$(find builds -maxdepth 1 -type f -name '*.cs3' -print -quit)"
           python3 -m json.tool builds/plugins.json >/dev/null
