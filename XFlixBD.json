@@ -1,0 +1,9 @@
+{
+  "name": "Mominul XFlixBD Repository",
+  "iconUrl": "https://www.google.com/s2/favicons?domain=xflixbd.org&sz=%size%",
+  "description": "Bangla Movies, TV Series and Asian Dramas",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/trigco/cloudstream-extensions-phisher/builds/plugins.json"
+  ]
+}
