@@ -1,6 +1,12 @@
 name: Mominul Mega CloudStream Extension
 
 on:
+  push:
+    branches:
+      - feature/mominul-megarepo
+    paths:
+      - 'MominulMega/**'
+      - '.github/workflows/megarepo-build.yml'
   pull_request:
     paths:
       - 'MominulMega/**'
