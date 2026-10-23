@@ -31,20 +31,20 @@ jobs:
       - name: Create local.properties for repository modules
         run: touch local.properties
 
-      - name: Build XFlixBD plugin
+      - name: Build and package XFlixBD plugin
         run: |
           chmod +x gradlew
-          ./gradlew :XFlixBD:build --stacktrace
-          echo "Built outputs:"
-          find XFlixBD/build -type f | sort | grep -E '\.(cs3|jar)$' || true
+          ./gradlew :XFlixBD:build makePluginsJson --stacktrace
+          echo "Built CloudStream plugin outputs:"
+          find XFlixBD/build build -type f | sort | grep -E '\.(cs3|jar|json)$' || true
           mkdir -p dist
-          find XFlixBD/build -type f \( -name '*.cs3' -o -name '*.jar' \) -exec cp {} dist/ \;
-          if [ -z "$(find dist -type f -print -quit)" ]; then
-            echo "No plugin package found after Gradle build."
+          find XFlixBD/build build -type f \( -name '*.cs3' -o -name 'plugins.json' \) -exec cp {} dist/ \;
+          if ! find dist -type f -name '*.cs3' -print -quit | grep -q .; then
+            echo "CloudStream .cs3 package was not generated."
             exit 1
           fi
 
-      - name: Upload XFlixBD plugin package
+      - name: Upload XFlixBD .cs3 package
         if: success()
         uses: actions/upload-artifact@v4
         with:
