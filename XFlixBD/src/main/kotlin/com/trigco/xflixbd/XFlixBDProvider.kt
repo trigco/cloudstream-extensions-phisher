@@ -1,6 +1,8 @@
 package com.trigco.xflixbd
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.plugins.BasePlugin
+import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
 
@@ -19,13 +21,15 @@ class XFlixBD : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "" to "Latest",
-        "genre/bangla" to "Bangla",
-        "genre/hollywood" to "Hollywood",
-        "genre/bollywood" to "Bollywood",
-        "genre/k-drama" to "K-Drama",
-        "genre/bangla-dubbed" to "Bangla Dubbed",
-        "genre/hindi-dubbed" to "Hindi Dubbed"
+        "$mainUrl/" to "Latest",
+        "$mainUrl/movies/" to "Movies",
+        "$mainUrl/tv-shows/" to "TV Shows",
+        "$mainUrl/genre/bangla/" to "Bangla",
+        "$mainUrl/genre/hollywood/" to "Hollywood",
+        "$mainUrl/genre/bollywood/" to "Bollywood",
+        "$mainUrl/genre/k-drama/" to "K-Drama",
+        "$mainUrl/genre/bangla-dubbed/" to "Bangla Dubbed",
+        "$mainUrl/genre/hindi-dubbed/" to "Hindi Dubbed"
     )
 
     private fun Element.toItem(): SearchResponse? {
@@ -45,19 +49,19 @@ class XFlixBD : MainAPI() {
                 .firstOrNull { value -> value.startsWith("http") || value.startsWith("/") }
                 ?.let { value -> fixUrl(value) }
         }
-
         val year = Regex("\\b(19|20)\\d{2}\\b").find(title + " " + text())?.value?.toIntOrNull()
-        val type = if (href.contains("tv-show", true) || href.contains("series", true) || text().contains("season", true)) {
-            TvType.TvSeries
-        } else TvType.Movie
+        val type = if (
+            href.contains("tv-show", true) || href.contains("series", true) ||
+            text().contains("season", true)
+        ) TvType.TvSeries else TvType.Movie
 
         return if (type == TvType.TvSeries) {
-            newTvSeriesSearchResponse(title, href, type) {
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = poster
                 this.year = year
             }
         } else {
-            newMovieSearchResponse(title, href, type) {
+            newMovieSearchResponse(title, href, TvType.Movie) {
                 this.posterUrl = poster
                 this.year = year
             }
@@ -65,44 +69,40 @@ class XFlixBD : MainAPI() {
     }
 
     private fun parseItems(document: org.jsoup.nodes.Document): List<SearchResponse> {
-        val cards = document.select(
-            "article, .item, .movie-item, .film-item, .post, .ml-item, .video-item, .grid-item, .entry"
-        ).mapNotNull { it.toItem() }
+        val cards = document.select("article, .item, .movie-item, .film-item, .post, .ml-item, .video-item, .grid-item, .entry")
+            .mapNotNull { it.toItem() }
         if (cards.isNotEmpty()) return cards.distinctBy { it.url }
 
         return document.select("a[href]").mapNotNull { link ->
-            val title = link.text().replace(Regex("\\s+"), " ").trim()
-            if (title.isBlank() || link.selectFirst("img") == null) null
+            if (link.text().isBlank() || link.selectFirst("img") == null) null
             else (link.parent() ?: link).toItem()
         }.distinctBy { it.url }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val path = request.data.trim('/')
-        val url = when {
-            path.isBlank() && page <= 1 -> "$mainUrl/"
-            page <= 1 -> "$mainUrl/$path/"
-            else -> "$mainUrl/$path/page/$page/"
-        }
-        val response = app.get(url, headers = mapOf("Referer" to "$mainUrl/"))
+        val base = request.data.trimEnd('/')
+        val url = if (page <= 1) base else "$base/page/$page/"
+        val response = app.get(url, referer = "$mainUrl/")
         val results = parseItems(response.document)
-        return newHomePageResponse(request.name, results, hasNext = results.isNotEmpty() && page < 100)
+        return newHomePageResponse(
+            list = HomePageList(name = request.name, list = results, isHorizontalImages = false),
+            hasNext = results.isNotEmpty() && page < 100
+        )
     }
 
-    override suspend fun search(query: String, page: Int): SearchResponseList {
+    override suspend fun search(query: String): List<SearchResponse> {
         val encoded = java.net.URLEncoder.encode(query.trim(), "UTF-8")
-        val url = if (page <= 1) "$mainUrl/?s=$encoded" else "$mainUrl/?s=$encoded&paged=$page"
-        val response = app.get(url, headers = mapOf("Referer" to "$mainUrl/"))
-        return parseItems(response.document).toNewSearchResponseList()
+        val response = app.get("$mainUrl/?s=$encoded", referer = "$mainUrl/")
+        return parseItems(response.document)
     }
 
-    override suspend fun load(url: String): LoadResponse {
-        val response = app.get(fixUrl(url), headers = mapOf("Referer" to "$mainUrl/"))
+    override suspend fun load(url: String): LoadResponse? {
+        val response = app.get(fixUrl(url), referer = "$mainUrl/")
         val document = response.document
         val title = document.selectFirst("meta[property=og:title]")?.attr("content")
             ?.takeIf { it.isNotBlank() }
             ?: document.selectFirst("h1, .entry-title, .post-title")?.text()?.trim()
-            ?: document.title().substringBefore(" - ").trim().ifBlank { "XFlixBD title" }
+            ?: document.title().substringBefore(" - ").trim().ifBlank { return null }
 
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?.takeIf { it.isNotBlank() }
@@ -113,24 +113,36 @@ class XFlixBD : MainAPI() {
         val plot = document.selectFirst("meta[property=og:description]")?.attr("content")
             ?.takeIf { it.isNotBlank() }
             ?: document.selectFirst(".description, .entry-content, .story, .plot")?.text()?.trim()
+        val year = Regex("\\b(19|20)\\d{2}\\b").find(title + " " + document.text().take(1500))?.value?.toIntOrNull()
 
-        val year = Regex("\\b(19|20)\\d{2}\\b")
-            .find(title + " " + document.text().take(1500))?.value?.toIntOrNull()
-        val isSeries = document.select("a[href*='season'], a[href*='episode'], .episodes, .seasons").isNotEmpty() ||
-            title.contains("season", true) || title.contains("episode", true)
+        val episodeAnchors = document.select("a[href*='episode'], a[href*='/ep-'], .episodes a, .episode-list a")
+        val isSeries = document.select("a[href*='season'], .episodes, .seasons, .episode-list").isNotEmpty() ||
+            title.contains("season", true) || title.contains("series", true)
 
-        return if (isSeries) {
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, url) {
-                this.posterUrl = poster
-                this.plot = plot
-                this.year = year
+        if (isSeries && episodeAnchors.isNotEmpty()) {
+            val episodes = episodeAnchors.mapNotNull { episodeLink ->
+                val href = episodeLink.absUrl("href").ifBlank { fixUrl(episodeLink.attr("href")) }
+                val label = episodeLink.text().trim().ifBlank { return@mapNotNull null }
+                if (!href.startsWith("http")) return@mapNotNull null
+                newEpisode(href) {
+                    this.name = label
+                    this.episode = Regex("(?:episode|ep)[\\s-]*(\\d+)", RegexOption.IGNORE_CASE)
+                        .find(label)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                }
             }
-        } else {
-            newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster
-                this.plot = plot
-                this.year = year
+            if (episodes.isNotEmpty()) {
+                return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                    this.posterUrl = poster
+                    this.plot = plot
+                    this.year = year
+                }
             }
+        }
+
+        return newMovieLoadResponse(title, url, TvType.Movie, url) {
+            this.posterUrl = poster
+            this.plot = plot
+            this.year = year
         }
     }
 
@@ -140,8 +152,8 @@ class XFlixBD : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(fixUrl(data), headers = mapOf("Referer" to "$mainUrl/")).document
-        var found = false
+        val document = app.get(fixUrl(data), referer = "$mainUrl/").document
+        var delegated = false
 
         document.select("iframe[src], iframe[data-src], source[src], a[href]").forEach { element ->
             val attribute = when {
@@ -161,11 +173,13 @@ class XFlixBD : MainAPI() {
                     Regex("watch|play|stream|server|download", RegexOption.IGNORE_CASE)
                 )) return@forEach
 
-            runCatching {
+            try {
                 loadExtractor(candidate, data, subtitleCallback, callback)
-                found = true
+                delegated = true
+            } catch (_: Exception) {
+                // An unsupported player is skipped; continue checking other public embeds.
             }
         }
-        return found
+        return delegated
     }
 }
