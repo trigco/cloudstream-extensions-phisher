@@ -27,8 +27,6 @@ jobs:
           cp -a source/gradle workspace/
           cp source/gradlew source/build.gradle.kts source/settings.gradle.kts source/gradle.properties workspace/
           cp -a source/XFlixBD workspace/
-          # Preserve CloudStream's build plugin and repository configuration,
-          # but exclude unrelated providers that can have independent failures.
           cat > workspace/settings.gradle.kts <<'EOF'
           rootProject.name = "CloudstreamPlugins"
           include("XFlixBD")
@@ -46,32 +44,24 @@ jobs:
       - name: Create local.properties
         run: touch workspace/local.properties
 
-      - name: Build and package XFlixBD plugin
+      - name: Build CloudStream .cs3 plugin
         working-directory: workspace
         run: |
           chmod +x gradlew
-          ./gradlew :XFlixBD:build --stacktrace
-          echo "Compiled plugin contents:"
-          find XFlixBD/build -type f | sort | grep -E '\.(jar|cs3)$' || true
-          mkdir -p dist
-          find XFlixBD/build -type f -name '*.jar' ! -name '*-sources.jar' -exec cp {} dist/ \;
-          test -s dist/full.jar
-
-      - name: Package plugin payload
-        working-directory: workspace
-        run: |
+          ./gradlew :XFlixBD:make --stacktrace
+          echo "Generated plugin files:"
+          find XFlixBD/build -type f \( -name '*.cs3' -o -name '*.jar' \) | sort
           mkdir -p release
-          cp XFlixBD/build/libs/*.jar release/ 2>/dev/null || true
-          find XFlixBD/build -type f -name 'full.jar' -exec cp {} release/XFlixBD-full.jar \;
-          if [ -z "$(find release -type f -print -quit)" ]; then
-            echo "No compiled XFlixBD plugin output found."
+          find XFlixBD/build -type f -name '*.cs3' -exec cp {} release/ \;
+          if [ -z "$(find release -maxdepth 1 -type f -name '*.cs3' -print -quit)" ]; then
+            echo "No .cs3 plugin generated. Build output:"
+            find XFlixBD/build -maxdepth 5 -type f | sort
             exit 1
           fi
-          (cd release && zip -q XFlixBD-extension.zip *)
 
-      - name: Upload XFlixBD compiled output
+      - name: Upload XFlixBD .cs3 plugin
         uses: actions/upload-artifact@v4
         with:
-          name: xflixbd-cloudstream-plugin
-          path: workspace/release/XFlixBD-extension.zip
+          name: xflixbd-cs3-plugin
+          path: workspace/release/*.cs3
           if-no-files-found: error
