@@ -77,9 +77,9 @@ jobs:
           set -euo pipefail
           find builds -maxdepth 1 -type f -name '*.cs3' -delete
           rm -f builds/plugins.json
-          find workspace/XFlixBD/build -type f -name '*.cs3' -exec cp {} builds/ \;
+          while IFS= read -r -d '' file; do cp "$file" builds/; done < <(find workspace/XFlixBD/build -type f -name '*.cs3' -print0)
           cp workspace/build/plugins.json builds/plugins.json
-          find workspace/XFlixBD/build -type f -name '*.jar' -exec cp {} builds/ \;
+          while IFS= read -r -d '' file; do cp "$file" builds/; done < <(find workspace/XFlixBD/build -type f -name '*.jar' -print0)
           cat > builds/repo.json <<'EOF'
           {
             "name": "Mominul XFlixBD Repository",
