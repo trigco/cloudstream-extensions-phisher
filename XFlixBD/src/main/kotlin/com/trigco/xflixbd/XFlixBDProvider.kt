@@ -215,7 +215,7 @@ class XFlixBD : MainAPI() {
                 lower.endsWith(".mkv") || lower.endsWith(".mov")
         }
 
-        fun emitDirect(url: String, referer: String) {
+        suspend fun emitDirect(url: String, referer: String) {
             if (!emittedUrls.add(url)) return
             val lower = url.lowercase()
             val type = if (lower.substringBefore("?").endsWith(".m3u8")) {
@@ -310,7 +310,7 @@ class XFlixBD : MainAPI() {
                 val raw = attributes.asSequence()
                     .map { element.attr(it).trim() }
                     .firstOrNull { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("/") }
-                    ?: return@forEach
+                    ?: continue
                 val candidate = element.absUrl(
                     attributes.firstOrNull { element.attr(it).trim() == raw } ?: "href"
                 ).ifBlank { fixUrl(raw) }
