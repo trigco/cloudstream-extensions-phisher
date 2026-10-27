@@ -242,7 +242,7 @@ class XFlixBD : MainAPI() {
             found = true
         }
 
-        fun inspectUrl(candidate: String, referer: String, anchorText: String = "") {
+        suspend fun inspectUrl(candidate: String, referer: String, anchorText: String = "") {
             val url = candidate.trim().replace("&amp;", "&")
                 .trimEnd(')', ']', ',', ';', '.', '"', '\'')
             if (!url.startsWith("http://") && !url.startsWith("https://")) return
@@ -302,10 +302,10 @@ class XFlixBD : MainAPI() {
             }.getOrNull() ?: continue
 
             val document = response.document
-            document.select(
+            for (element in document.select(
                 "a[href], iframe[src], iframe[data-src], source[src], video[src], " +
                     "form[action], [data-url], [data-link], [data-href]"
-            ).forEach { element ->
+            )) {
                 val attributes = listOf("href", "src", "data-src", "data-url", "data-link", "data-href", "action")
                 val raw = attributes.asSequence()
                     .map { element.attr(it).trim() }
@@ -321,7 +321,7 @@ class XFlixBD : MainAPI() {
             // of a normal anchor. Read only URLs exposed in the returned HTML;
             // this does not execute scripts or bypass interactive verification.
             val html = response.text.replace("\\/", "/").replace("&amp;", "&")
-            Regex("""https?://[^\s"'<>\\]+""").findAll(html).forEach { match ->
+            for (match in Regex("""https?://[^\s"'<>\\]+""").findAll(html)) {
                 val candidate = match.value.trimEnd(')', ']', ',', ';', '.')
                 val host = hostOf(candidate)
                 val relevantHost = host == mainHost ||
