@@ -193,34 +193,160 @@ class XFlixBD : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(fixUrl(data), referer = "$mainUrl/").document
-        var delegated = false
+        // XFlixBD often points to a same-site /links/ page, then to URLSaver,
+        // and finally to a supported host or a direct media URL. Crawl only a
+        // small, bounded number of public link pages to avoid following ad loops.
+        val startUrl = fixUrl(data)
+        val mainHost = runCatching { java.net.URI(mainUrl).host.orEmpty().lowercase() }.getOrDefault("")
+        val queue = mutableListOf<Pair<String, String>>()
+        val visited = linkedSetOf<String>()
+        val emittedUrls = linkedSetOf<String>()
+        var found = false
 
-        document.select("iframe[src], iframe[data-src], source[src], a[href]").forEach { element ->
-            val attribute = when {
-                element.hasAttr("src") -> "src"
-                element.hasAttr("data-src") -> "data-src"
-                else -> "href"
+        queue.add(startUrl to "$mainUrl/")
+
+        fun hostOf(url: String): String =
+            runCatching { java.net.URI(url).host.orEmpty().lowercase() }.getOrDefault("")
+
+        fun isMediaUrl(url: String): Boolean {
+            val lower = url.lowercase().substringBefore("?").substringBefore("#")
+            return lower.endsWith(".m3u8") || lower.endsWith(".mp4") ||
+                lower.endsWith(".mpd") || lower.endsWith(".webm") ||
+                lower.endsWith(".mkv") || lower.endsWith(".mov")
+        }
+
+        fun emitDirect(url: String, referer: String) {
+            if (!emittedUrls.add(url)) return
+            val lower = url.lowercase()
+            val type = if (lower.substringBefore("?").endsWith(".m3u8")) {
+                ExtractorLinkType.M3U8
+            } else {
+                ExtractorLinkType.VIDEO
             }
-            val raw = element.attr(attribute).trim()
-            if (raw.isBlank()) return@forEach
-            val candidate = element.absUrl(attribute).ifBlank { fixUrl(raw) }
-            if (!candidate.startsWith("http")) return@forEach
+            callback.invoke(
+                newExtractorLink(
+                    source = name,
+                    name = if (lower.contains("1080")) "$name 1080p" else name,
+                    url = url,
+                    type = type
+                ) {
+                    this.referer = referer
+                    this.quality = when {
+                        lower.contains("1080") -> Qualities.P1080.value
+                        lower.contains("720") -> Qualities.P720.value
+                        lower.contains("480") -> Qualities.P480.value
+                        else -> Qualities.Unknown.value
+                    }
+                }
+            )
+            found = true
+        }
 
-            val host = runCatching { java.net.URI(candidate).host.orEmpty().lowercase() }.getOrDefault("")
-            val ownHost = runCatching { java.net.URI(mainUrl).host.orEmpty().lowercase() }.getOrDefault("")
-            if (host == ownHost || host.endsWith(".$ownHost")) return@forEach
-            if (element.tagName() == "a" && !element.text().contains(
-                    Regex("watch|play|stream|server|download", RegexOption.IGNORE_CASE)
-                )) return@forEach
+        fun inspectUrl(candidate: String, referer: String, anchorText: String = "") {
+            val url = candidate.trim().replace("&amp;", "&")
+                .trimEnd(')', ']', ',', ';', '.', '"', '\'')
+            if (!url.startsWith("http://") && !url.startsWith("https://")) return
+            if (url in visited || url in emittedUrls) return
 
-            try {
-                loadExtractor(candidate, data, subtitleCallback, callback)
-                delegated = true
-            } catch (_: Exception) {
-                // An unsupported player is skipped; continue checking other public embeds.
+            val host = hostOf(url)
+            val lowerUrl = url.lowercase()
+            val lowerText = anchorText.lowercase()
+            val isKnownIntermediate = host == mainHost ||
+                host == "urlsaver.top" || host.endsWith(".urlsaver.top") ||
+                host == "vcloud.beer" || host.endsWith(".vcloud.beer")
+            val looksLikeLinkButton = Regex("download|watch|play|stream|server|480p|720p|1080p|get link|continue")
+                .containsMatchIn(lowerText)
+            val isR2File = host.endsWith(".r2.dev")
+            if (isMediaUrl(url) || isR2File) {
+                emitDirect(url, referer)
+                return
+            }
+
+            // Follow same-site link pages and the intermediary pages shown in
+            // the site's public link chain. Keep a strict visit limit below.
+            val shouldVisit = (host == mainHost && lowerUrl.contains("/links/")) ||
+                host == "urlsaver.top" || host.endsWith(".urlsaver.top") ||
+                host == "vcloud.beer" || host.endsWith(".vcloud.beer")
+            if (shouldVisit) {
+                queue.add(url to referer)
+                return
+            }
+
+            if (host != mainHost && (looksLikeLinkButton || lowerUrl.contains("embed") ||
+                    lowerUrl.contains("player") || lowerUrl.contains("stream"))) {
+                runCatching {
+                    loadExtractor(url, referer, subtitleCallback) { link ->
+                        if (emittedUrls.add(link.url)) {
+                            callback.invoke(link)
+                            found = true
+                        }
+                    }
+                }
             }
         }
-        return delegated
+
+        while (queue.isNotEmpty() && visited.size < 8) {
+            val (pageUrl, referer) = queue.removeAt(0)
+            if (!visited.add(pageUrl)) continue
+
+            val response = runCatching {
+                app.get(
+                    pageUrl,
+                    referer = referer,
+                    headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language" to "en-US,en;q=0.9,bn;q=0.8"
+                    )
+                )
+            }.getOrNull() ?: continue
+
+            val document = response.document
+            document.select(
+                "a[href], iframe[src], iframe[data-src], source[src], video[src], " +
+                    "form[action], [data-url], [data-link], [data-href]"
+            ).forEach { element ->
+                val attributes = listOf("href", "src", "data-src", "data-url", "data-link", "data-href", "action")
+                val raw = attributes.asSequence()
+                    .map { element.attr(it).trim() }
+                    .firstOrNull { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("/") }
+                    ?: return@forEach
+                val candidate = element.absUrl(
+                    attributes.firstOrNull { element.attr(it).trim() == raw } ?: "href"
+                ).ifBlank { fixUrl(raw) }
+                inspectUrl(candidate, pageUrl, element.text())
+            }
+
+            // Some redirect pages keep their next URL in inline scripts instead
+            // of a normal anchor. Read only URLs exposed in the returned HTML;
+            // this does not execute scripts or bypass interactive verification.
+            val html = response.text.replace("\\/", "/").replace("&amp;", "&")
+            Regex("""https?://[^\s"'<>\\]+""").findAll(html).forEach { match ->
+                val candidate = match.value.trimEnd(')', ']', ',', ';', '.')
+                val host = hostOf(candidate)
+                val relevantHost = host == mainHost ||
+                    host == "urlsaver.top" || host.endsWith(".urlsaver.top") ||
+                    host == "vcloud.beer" || host.endsWith(".vcloud.beer") ||
+                    host.endsWith(".r2.dev")
+                if (relevantHost || isMediaUrl(candidate)) inspectUrl(candidate, pageUrl)
+            }
+
+            // If the page itself is a supported extractor page, give the
+            // CloudStream extractor registry a chance as well.
+            val host = hostOf(pageUrl)
+            if (host != mainHost && host != "urlsaver.top" && !host.endsWith(".urlsaver.top") &&
+                host != "vcloud.beer" && !host.endsWith(".vcloud.beer")) {
+                runCatching {
+                    loadExtractor(pageUrl, referer, subtitleCallback) { link ->
+                        if (emittedUrls.add(link.url)) {
+                            callback.invoke(link)
+                            found = true
+                        }
+                    }
+                }
+            }
+        }
+
+        return found
     }
 }
